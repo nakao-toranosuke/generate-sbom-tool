@@ -1,0 +1,30 @@
+keywords:
+  management_no:
+    - 管理番号
+    - 管理No
+    - No
+    - ID
+  language:
+    - 言語
+    - 言語名
+    - Language
+  package_name:
+    - パッケージ
+    - パッケージ名
+    - ライブラリ
+    - Library
+    - Package
+  version:
+    - バージョン
+    - バージョン名
+    - Version
+  url:
+    - URL
+    - Url
+    - ダウンロード
+    - ダウンロードURL
+  software_file_name:
+    - ソフトウェアファイル名
+    - ファイル名
+    - filename
+    - whl

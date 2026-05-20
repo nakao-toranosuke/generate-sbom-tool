@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+work/
+out/
+*.zip
+.git/
+.idea/
+.vscode/
