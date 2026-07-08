@@ -8,6 +8,7 @@ FROM ${RUST_IMAGE} AS rust_toolchain
 FROM python:${PYTHON_VERSION}-slim-bookworm
 
 ARG NODE_VERSION=24.18.0
+ARG UV_VERSION=0.11.26
 ARG GO_VERSION=1.26.4
 ARG PHP_VERSION=8.5.8
 ARG RUBY_VERSION=4.0.5
@@ -68,8 +69,8 @@ COPY --from=rust_toolchain /usr/local/cargo /usr/local/cargo
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in \
-      amd64) node_arch="x64"; go_arch="amd64"; dotnet_arch="x64"; trivy_arch="64bit" ;; \
-      arm64) node_arch="arm64"; go_arch="arm64"; dotnet_arch="arm64"; trivy_arch="ARM64" ;; \
+      amd64) node_arch="x64"; uv_arch="x86_64-unknown-linux-gnu"; go_arch="amd64"; dotnet_arch="x64"; trivy_arch="64bit" ;; \
+      arm64) node_arch="arm64"; uv_arch="aarch64-unknown-linux-gnu"; go_arch="arm64"; dotnet_arch="arm64"; trivy_arch="ARM64" ;; \
       *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
     esac; \
     \
@@ -78,6 +79,14 @@ RUN set -eux; \
     mkdir -p /opt/node; \
     tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1; \
     rm -f /tmp/node.tar.xz; \
+    \
+    curl -fsSL -o /tmp/uv.tgz \
+      "https://releases.astral.sh/github/uv/releases/download/${UV_VERSION}/uv-${uv_arch}.tar.gz"; \
+    mkdir -p /tmp/uv-extract; \
+    tar -xzf /tmp/uv.tgz -C /tmp/uv-extract; \
+    install -m 0755 "/tmp/uv-extract/uv-${uv_arch}/uv" /usr/local/bin/uv; \
+    install -m 0755 "/tmp/uv-extract/uv-${uv_arch}/uvx" /usr/local/bin/uvx; \
+    rm -rf /tmp/uv.tgz /tmp/uv-extract; \
     \
     curl -fsSL -o /tmp/go.tgz \
       "https://go.dev/dl/go${GO_VERSION}.linux-${go_arch}.tar.gz"; \

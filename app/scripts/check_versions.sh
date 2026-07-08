@@ -4,6 +4,7 @@ set -eu
 python --version
 python -m pip show streamlit
 streamlit version
+uv --version
 node --version
 npm --version
 java -version
