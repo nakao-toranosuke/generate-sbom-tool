@@ -17,6 +17,31 @@ from src.core.project_orchestrator import run_project_zip_job
 
 EXPORT_ROOT = Path("/tmp/out/ui_exports")
 
+TABLE_UPLOAD_MAX_MB = 50
+FILE_UPLOAD_MAX_MB = 200
+PROJECT_UPLOAD_MAX_MB = 200
+
+
+def uploader_key(base_key: str) -> str:
+    counter_key = f"{base_key}_reset_counter"
+
+    if counter_key not in st.session_state:
+        st.session_state[counter_key] = 0
+
+    return f"{base_key}_{st.session_state[counter_key]}"
+
+
+def render_upload_reset_control(base_key: str, label: str) -> None:
+    st.caption(
+        "If an upload fails, stalls, or the wrong file remains selected, "
+        "reset this upload input and choose the file again."
+    )
+
+    if st.button(label, key=f"{base_key}_reset_button"):
+        counter_key = f"{base_key}_reset_counter"
+        st.session_state[counter_key] = st.session_state.get(counter_key, 0) + 1
+        st.rerun()
+
 
 def main() -> None:
     st.set_page_config(
@@ -98,10 +123,14 @@ def render_table_tab() -> None:
         "Optional columns: `output_label`, `group_id`, `artifact_id`."
     )
 
+    render_upload_reset_control("table_upload", "Reset CSV/Excel upload input")
+
     uploaded = st.file_uploader(
         "Upload CSV or Excel",
         type=["csv", "xlsx"],
-        key="table_upload",
+        key=uploader_key("table_upload"),
+        max_upload_size=TABLE_UPLOAD_MAX_MB,
+        help="Generation starts only after you click the generate button.",
     )
 
     if uploaded is None:
@@ -211,10 +240,14 @@ def render_table_template() -> None:
 def render_file_tab() -> None:
     st.subheader("File input")
 
+    render_upload_reset_control("file_upload", "Reset file upload input")
+
     uploaded = st.file_uploader(
         "Upload a single file",
         type=None,
-        key="file_upload",
+        key=uploader_key("file_upload"),
+        max_upload_size=FILE_UPLOAD_MAX_MB,
+        help="Generation starts only after you click the generate button.",
     )
 
     col1, col2 = st.columns(2)
@@ -252,10 +285,14 @@ def render_file_tab() -> None:
 def render_project_tab() -> None:
     st.subheader("Project ZIP input")
 
+    render_upload_reset_control("project_zip_upload", "Reset project ZIP upload input")
+
     uploaded = st.file_uploader(
         "Upload project ZIP",
         type=["zip"],
-        key="project_zip_upload",
+        key=uploader_key("project_zip_upload"),
+        max_upload_size=PROJECT_UPLOAD_MAX_MB,
+        help="Generation starts only after you click the generate button.",
     )
 
     col1, col2 = st.columns(2)
