@@ -3,9 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
-import textwrap
 import uuid
 import zipfile
 from dataclasses import dataclass, field
@@ -19,13 +17,24 @@ ECOSYSTEM_LABELS = {
     "pypi": "Python",
     "npm": "Node.js",
     "maven": "Java",
+    "composer": "PHP",
+    "gem": "Ruby",
+    "cargo": "Rust",
+    "golang": "Go",
+    "nuget": ".NET",
 }
 
 NOISE_PACKAGE_NAMES = {
     "sbom-stub",
+    "local/sbom-stub",
     "standalone-pom",
     "uv.lock",
     "package-lock.json",
+    "composer.lock",
+    "gemfile.lock",
+    "cargo.lock",
+    "go.sum",
+    "packages.lock.json",
     "pom.xml",
 }
 
@@ -92,12 +101,11 @@ def run_package_request(input_request: PackageRequest) -> PackageJobResult:
     for path in (work_dir, sbom_dir, error_dir, manifest_dir, input_dir, log_dir):
         path.mkdir(parents=True, exist_ok=True)
 
-    _write_input_summary(input_request, input_dir)
-
     request = input_request
 
     try:
         request = _normalize_request(input_request)
+        _write_input_summary(request, input_dir)
         _prepare_workspace(request, work_dir, log_dir)
 
         raw_sbom = sbom_dir / "raw_sbom.spdx.json"
@@ -160,6 +168,9 @@ def run_package_request(input_request: PackageRequest) -> PackageJobResult:
 
 def _normalize_request(request: PackageRequest) -> PackageRequest:
     ecosystem = request.ecosystem.strip().lower()
+    if ecosystem == "go":
+        ecosystem = "golang"
+
     name = request.name.strip()
     version = request.version.strip()
     output_label = request.output_label.strip() or "package"
@@ -212,24 +223,45 @@ def _prepare_workspace(request: PackageRequest, work_dir: Path, log_dir: Path) -
         _prepare_maven_workspace(request, work_dir, log_dir)
         return
 
+    if request.ecosystem == "composer":
+        _prepare_composer_workspace(request, work_dir, log_dir)
+        return
+
+    if request.ecosystem == "gem":
+        _prepare_gem_workspace(request, work_dir, log_dir)
+        return
+
+    if request.ecosystem == "cargo":
+        _prepare_cargo_workspace(request, work_dir, log_dir)
+        return
+
+    if request.ecosystem == "golang":
+        _prepare_golang_workspace(request, work_dir, log_dir)
+        return
+
+    if request.ecosystem == "nuget":
+        _prepare_nuget_workspace(request, work_dir, log_dir)
+        return
+
     raise PackageGenerationError(f"Unsupported ecosystem: {request.ecosystem}")
 
 
 def _prepare_python_workspace(request: PackageRequest, work_dir: Path, log_dir: Path) -> None:
     dependency = f"{request.name}=={request.version}"
-    pyproject = f"""\
-[project]
-name = "sbom-stub"
-version = "0.0.0"
-requires-python = ">=3.14,<3.15"
-dependencies = [
-    {json.dumps(dependency)},
-]
-
-[tool.uv]
-package = false
-"""
-    (work_dir / "pyproject.toml").write_text(pyproject, encoding="utf-8")
+    lines = [
+        "[project]",
+        'name = "sbom-stub"',
+        'version = "0.0.0"',
+        'requires-python = ">=3.14,<3.15"',
+        "dependencies = [",
+        f"    {json.dumps(dependency)},",
+        "]",
+        "",
+        "[tool.uv]",
+        "package = false",
+        "",
+    ]
+    (work_dir / "pyproject.toml").write_text("\n".join(lines), encoding="utf-8")
     _run_to_log(["uv", "lock", "--no-progress"], work_dir, log_dir / "uv_lock.log", timeout=1200)
 
 
@@ -238,6 +270,9 @@ def _prepare_npm_workspace(request: PackageRequest, work_dir: Path, log_dir: Pat
         "name": "sbom-stub",
         "version": "0.0.0",
         "private": True,
+        "engines": {
+            "node": ">=24.0.0 <25.0.0",
+        },
         "dependencies": {
             request.name: request.version,
         },
@@ -265,28 +300,139 @@ def _prepare_maven_workspace(request: PackageRequest, work_dir: Path, log_dir: P
     if not request.group_id or not request.artifact_id:
         raise PackageGenerationError("Maven groupId and artifactId are required.")
 
-    pom = f"""\
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-  <modelVersion>4.0.0</modelVersion>
-  <groupId>local.sbom</groupId>
-  <artifactId>standalone-pom</artifactId>
-  <version>0.0.0</version>
-  <dependencies>
-    <dependency>
-      <groupId>{_xml_escape(request.group_id)}</groupId>
-      <artifactId>{_xml_escape(request.artifact_id)}</artifactId>
-      <version>{_xml_escape(request.version)}</version>
-    </dependency>
-  </dependencies>
-</project>
-"""
-    (work_dir / "pom.xml").write_text(pom, encoding="utf-8")
+    lines = [
+        '<project xmlns="http://maven.apache.org/POM/4.0.0"',
+        '         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
+        '         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">',
+        "  <modelVersion>4.0.0</modelVersion>",
+        "  <groupId>local.sbom</groupId>",
+        "  <artifactId>standalone-pom</artifactId>",
+        "  <version>0.0.0</version>",
+        "  <dependencies>",
+        "    <dependency>",
+        f"      <groupId>{_xml_escape(request.group_id)}</groupId>",
+        f"      <artifactId>{_xml_escape(request.artifact_id)}</artifactId>",
+        f"      <version>{_xml_escape(request.version)}</version>",
+        "    </dependency>",
+        "  </dependencies>",
+        "</project>",
+        "",
+    ]
+    (work_dir / "pom.xml").write_text("\n".join(lines), encoding="utf-8")
     _run_to_log(
         ["mvn", "-q", "-DskipTests", "dependency:tree", "-DoutputFile=dependency-tree.txt"],
         work_dir,
         log_dir / "maven_dependency_tree.log",
+        timeout=1200,
+    )
+
+
+def _prepare_composer_workspace(request: PackageRequest, work_dir: Path, log_dir: Path) -> None:
+    composer_json = {
+        "name": "local/sbom-stub",
+        "type": "project",
+        "require": {
+            request.name: request.version,
+        },
+        "config": {
+            "allow-plugins": False,
+        },
+    }
+    (work_dir / "composer.json").write_text(
+        json.dumps(composer_json, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    _run_to_log(
+        [
+            "composer",
+            "update",
+            "--no-interaction",
+            "--no-scripts",
+            "--no-plugins",
+            "--no-audit",
+        ],
+        work_dir,
+        log_dir / "composer_update.log",
+        timeout=1200,
+    )
+
+
+def _prepare_gem_workspace(request: PackageRequest, work_dir: Path, log_dir: Path) -> None:
+    gemfile = (
+        'source "https://rubygems.org"\n'
+        "\n"
+        f"gem {json.dumps(request.name)}, {json.dumps(request.version)}\n"
+    )
+    (work_dir / "Gemfile").write_text(gemfile, encoding="utf-8")
+    _run_to_log(["bundle", "lock"], work_dir, log_dir / "bundle_lock.log", timeout=1200)
+
+
+def _prepare_cargo_workspace(request: PackageRequest, work_dir: Path, log_dir: Path) -> None:
+    dependency_version = request.version
+    if not dependency_version.startswith(("=", ">", "<", "~", "^")):
+        dependency_version = f"={dependency_version}"
+
+    lines = [
+        "[package]",
+        'name = "sbom-stub"',
+        'version = "0.0.0"',
+        'edition = "2024"',
+        "publish = false",
+        "",
+        "[dependencies]",
+        f"{json.dumps(request.name)} = {json.dumps(dependency_version)}",
+        "",
+    ]
+    (work_dir / "Cargo.toml").write_text("\n".join(lines), encoding="utf-8")
+
+    src_dir = work_dir / "src"
+    src_dir.mkdir(parents=True, exist_ok=True)
+    (src_dir / "lib.rs").write_text("// dependency resolution stub\n", encoding="utf-8")
+
+    _run_to_log(
+        ["cargo", "generate-lockfile"],
+        work_dir,
+        log_dir / "cargo_generate_lockfile.log",
+        timeout=1200,
+    )
+
+
+def _prepare_golang_workspace(request: PackageRequest, work_dir: Path, log_dir: Path) -> None:
+    lines = [
+        "module local/sbom-stub",
+        "",
+        "go 1.26",
+        "",
+        f"require {request.name} {request.version}",
+        "",
+    ]
+    (work_dir / "go.mod").write_text("\n".join(lines), encoding="utf-8")
+    _run_to_log(
+        ["go", "mod", "download", "all"],
+        work_dir,
+        log_dir / "go_mod_download.log",
+        timeout=1200,
+    )
+
+
+def _prepare_nuget_workspace(request: PackageRequest, work_dir: Path, log_dir: Path) -> None:
+    lines = [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <PropertyGroup>",
+        "    <TargetFramework>net10.0</TargetFramework>",
+        "    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>",
+        "  </PropertyGroup>",
+        "  <ItemGroup>",
+        f'    <PackageReference Include="{_xml_escape(request.name)}" Version="{_xml_escape(request.version)}" />',
+        "  </ItemGroup>",
+        "</Project>",
+        "",
+    ]
+    (work_dir / "sbom-stub.csproj").write_text("\n".join(lines), encoding="utf-8")
+    _run_to_log(
+        ["dotnet", "restore", "--use-lock-file"],
+        work_dir,
+        log_dir / "dotnet_restore.log",
         timeout=1200,
     )
 
@@ -321,6 +467,24 @@ def _run_to_log(command: list[str], cwd: Path, log_file: Path, timeout: int) -> 
     env["UV_CACHE_DIR"] = str(cache_root / "uv")
     env["NPM_CONFIG_CACHE"] = str(cache_root / "npm")
     env["NPM_CONFIG_UPDATE_NOTIFIER"] = "false"
+
+    home_dir = cache_root / "home"
+    home_dir.mkdir(parents=True, exist_ok=True)
+    env["HOME"] = str(home_dir)
+
+    env["COMPOSER_CACHE_DIR"] = str(cache_root / "composer")
+    env["COMPOSER_ALLOW_SUPERUSER"] = "1"
+
+    env["BUNDLE_APP_CONFIG"] = str(cache_root / "bundle")
+    env["BUNDLE_PATH"] = str(cache_root / "bundle_path")
+
+    env["CARGO_HOME"] = str(cache_root / "cargo")
+
+    env["GOPATH"] = str(cache_root / "go")
+    env["GOMODCACHE"] = str(cache_root / "go" / "pkg" / "mod")
+
+    env["DOTNET_CLI_HOME"] = str(cache_root / "dotnet_home")
+    env["NUGET_PACKAGES"] = str(cache_root / "nuget")
 
     maven_opts = env.get("MAVEN_OPTS", "").strip()
     local_m2 = f"-Dmaven.repo.local={cache_root / 'm2'}"
@@ -482,7 +646,7 @@ def _create_artifact_zip(job_id: str, job_out_root: Path) -> Path:
         artifact_zip.unlink()
 
     with zipfile.ZipFile(artifact_zip, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for dirname in ("sbom", "error", "manifest", "input", "logs"):
+        for dirname in ("sbom", "error", "manifest", "input"):
             base = job_out_root / dirname
             if not base.exists():
                 continue

@@ -29,6 +29,36 @@ CASES = [
         "version": "4.13.2",
         "output_label": "pkg-maven",
     },
+    {
+        "ecosystem": "composer",
+        "name": "psr/log",
+        "version": "3.0.2",
+        "output_label": "pkg-composer",
+    },
+    {
+        "ecosystem": "gem",
+        "name": "rake",
+        "version": "13.2.1",
+        "output_label": "pkg-gem",
+    },
+    {
+        "ecosystem": "cargo",
+        "name": "itoa",
+        "version": "1.0.11",
+        "output_label": "pkg-cargo",
+    },
+    {
+        "ecosystem": "golang",
+        "name": "github.com/google/uuid",
+        "version": "v1.6.0",
+        "output_label": "pkg-golang",
+    },
+    {
+        "ecosystem": "nuget",
+        "name": "Newtonsoft.Json",
+        "version": "13.0.3",
+        "output_label": "pkg-nuget",
+    },
 ]
 
 
