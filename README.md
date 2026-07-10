@@ -1,5 +1,7 @@
 # SBOM Generator
 
+Language: English | [日本語](README.ja.md)
+
 SBOM Generator is a Streamlit-based tool for generating SPDX JSON SBOM artifacts from package inputs, file inputs, and project ZIP inputs.
 
 The tool is designed for small-scale SBOM generation and local or containerized execution.
